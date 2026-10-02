@@ -1,5 +1,5 @@
 // Bump this version any time app files change, so phones pick up the update.
-const CACHE = 'ss-invoicing-v15';
+const CACHE = 'ss-invoicing-v16';
 const SHELL = [
   './',
   './index.html',

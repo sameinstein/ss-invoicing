@@ -178,6 +178,10 @@ async function loadReferenceData() {
 async function login(email, password) {
   const { error } = await sb.auth.signInWithPassword({ email, password });
   if (error) throw error;
+  try { localStorage.setItem('ss_last_email', email); } catch (e) { /* private browsing, etc. */ }
+}
+function lastEmail() {
+  try { return localStorage.getItem('ss_last_email') || ''; } catch (e) { return ''; }
 }
 async function logout() {
   await sb.auth.signOut();
@@ -306,7 +310,7 @@ function viewLogin() {
         <form id="loginForm" novalidate>
           <div class="login-field">
             <label for="loginEmail">Email address</label>
-            <input id="loginEmail" name="email" type="email" autocomplete="username" required placeholder="you@example.com" />
+            <input id="loginEmail" name="email" type="email" autocomplete="username" required placeholder="you@example.com" value="${esc(lastEmail())}" />
           </div>
           <div class="login-field">
             <label for="loginPw">Password</label>
