@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<title>S&amp;S Shop Invoicing</title>
+<meta name="theme-color" content="#c0392b" />
+<link rel="manifest" href="manifest.json" />
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png" />
+<meta name="apple-mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+<meta name="apple-mobile-web-app-title" content="S&amp;S Invoices" />
+<link rel="stylesheet" href="app.css" />
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700&display=swap">
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.2/css/all.min.css" integrity="sha512-SnH5WK+bZxgPHs44uWIX+LLJAJ9/2PkPKZ5QiAj6Ta86w+fsb2TkcmfRyVX3pBnMFcV7oQPJkl9QevSCWr3W6A==" crossorigin="anonymous" referrerpolicy="no-referrer" />
+</head>
+<body>
+<div id="app">
+  <aside class="sidebar" id="sidebar">
+    <div class="brand"><span class="brand-text">S&amp;S <small>Shop</small></span></div>
+    <nav id="sidebarNav"></nav>
+    <button class="sidebar-logout" id="sidebarLogoutBtn"><i class="fa-solid fa-right-from-bracket"></i> Logout</button>
+  </aside>
+
+  <header class="topbar">
+    <span class="brand-text">S&amp;S <small>Shop</small></span>
+    <div class="spacer"></div>
+    <button class="icon-btn hidden" id="logoutBtn" title="Log out"><i class="fa-solid fa-right-from-bracket"></i></button>
+  </header>
+
+  <main id="view"><div class="center-load"><div class="spin"></div></div></main>
+
+  <nav class="tabbar hidden" id="tabbar">
+    <a href="#/dashboard" data-tab="dashboard"><span class="ic"><i class="fa-solid fa-house"></i></span>Home</a>
+    <a href="#/invoices" data-tab="invoices"><span class="ic"><i class="fa-solid fa-file-invoice"></i></span>Invoices</a>
+    <a href="#/expenses" data-tab="expenses"><span class="ic"><i class="fa-solid fa-wallet"></i></span>Expenses</a>
+    <a href="#/more" data-tab="more"><span class="ic"><i class="fa-solid fa-ellipsis"></i></span>More</a>
+  </nav>
+</div>
+
+<div id="modalRoot"></div>
+<div id="toastRoot"></div>
+<div id="printSheet"></div>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
