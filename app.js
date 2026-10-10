@@ -1254,7 +1254,7 @@ async function viewInvoiceForm(id) {
       <div class="row between"><h2 style="margin:0">Items</h2><button type="button" class="btn ghost sm" id="addLine">+ Add line</button></div>
       <datalist id="itemsList">${state.items.map(i => `<option value="${esc(i.name)}" data-price="${i.unit_price}">`).join('')}</datalist>
       <div id="linesBox">${linesHtml()}</div>
-      <input type="file" id="linePhotoInput" accept="image/*" capture="environment" class="hidden" />
+      <input type="file" id="linePhotoInput" accept="image/*" class="hidden" />
     </div>
 
     <div class="card">
@@ -1702,7 +1702,7 @@ async function viewExpenseForm(id) {
         <div class="field"><label>Notes</label><textarea name="description">${esc(exp?.description || '')}</textarea></div>
         <div class="field">
           <label>Receipt photo ${exp?.receipt_path ? '(replace)' : '(optional)'}</label>
-          <input name="receipt" type="file" accept="image/*" capture="environment" />
+          <input name="receipt" type="file" accept="image/*" />
           ${exp?.receipt_path ? `<div class="small muted" style="margin-top:4px">A receipt is already attached.</div>` : ''}
         </div>
         <button class="btn primary block" type="submit" id="expSaveBtn">Save expense</button>
@@ -1869,7 +1869,7 @@ function openItemModal(item) {
       <div class="field"><label>Default price</label><input name="unit_price" type="number" min="0" step="1" value="${item?.unit_price ?? 0}" /></div>
       <div class="field">
         <label>Photo ${item?.photo_path ? '(replace)' : '(optional)'}</label>
-        <input name="photo" type="file" accept="image/*" capture="environment" />
+        <input name="photo" type="file" accept="image/*" />
         <div class="small muted" style="margin-top:4px">Photos are shrunk automatically on upload to save space.</div>
         ${item?.photo_path ? `<label class="check-row" style="margin-top:8px"><input type="checkbox" name="remove_photo" /> Remove current photo</label>` : ''}
       </div>
