@@ -2022,3 +2022,4 @@ async function viewReports() {
     navigator.serviceWorker.register('./sw.js').catch(() => {});
   }
 })();
+
