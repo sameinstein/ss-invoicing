@@ -638,7 +638,7 @@ async function viewInvoiceDetail(id) {
       </div>
       ${!inv.is_locked && !inv.is_void ? `<a class="btn sm" href="#/invoices/${inv.id}/edit">Edit</a>` : ''}
       <button class="btn sm" id="printBtn">PDF</button>
-      ${!inv.is_locked ? `<button class="btn sm danger" id="deleteInvBtn" title="Delete invoice"><i class="fa-solid fa-trash"></i></button>` : ''}
+      <button class="btn sm danger" id="deleteInvBtn" title="Delete invoice"><i class="fa-solid fa-trash"></i></button>
     </div>
 
     <div class="card">
@@ -698,7 +698,10 @@ async function viewInvoiceDetail(id) {
   if (deleteInvBtn) deleteInvBtn.addEventListener('click', () => {
     confirmDelete(
       'Delete invoice?',
-      `${inv.number} and its ${pays.length} payment(s) will be permanently deleted. This cannot be undone.`,
+      `${inv.number} — ${inv.client_name} — ${money(inv.total)}` +
+        (Number(inv.balance_due) > 0 ? ` (${money(inv.balance_due)} still due)` : '') +
+        `\n\nThis invoice and its ${pays.length} payment(s) will be permanently deleted` +
+        (inv.is_imported ? ' (it was imported from Invoice Simple)' : '') + '. This cannot be undone.',
       'Delete invoice',
       async () => {
         const photoPaths = lines.map(l => l.photo_path).filter(Boolean);
@@ -1513,7 +1516,7 @@ function closeModal() { $('#modalRoot').innerHTML = ''; }
 function confirmDelete(title, message, confirmLabel, onConfirm) {
   openModal(`
     <h3>${esc(title)}</h3>
-    <p class="small muted" style="margin:0 0 18px">${esc(message)}</p>
+    <p class="small muted" style="margin:0 0 18px;white-space:pre-line">${esc(message)}</p>
     <div class="row" style="gap:8px">
       <button type="button" class="btn block" id="confirmCancel">Cancel</button>
       <button type="button" class="btn danger-solid block" id="confirmGo">${esc(confirmLabel)}</button>
