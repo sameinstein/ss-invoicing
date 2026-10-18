@@ -325,6 +325,12 @@ textarea { resize: vertical; min-height: 64px; }
   column-width: 220px; column-gap: 26px; column-rule: 1px dashed var(--line);
   font-size: 10.5px; line-height: 1.6;
 }
+/* Authorised signature block */
+.inv-sign { display: flex; justify-content: flex-end; margin-top: 18px; page-break-inside: avoid; break-inside: avoid; }
+.inv-sign .sig-box { width: 52mm; text-align: center; }
+.inv-sign img { display: block; width: 38mm; height: auto; margin: 0 0 1px auto; }
+.inv-sign .sig-line { border-top: 1px solid #9a9aa4; }
+.inv-sign .sig-cap { font-size: 8px; color: var(--muted-2); text-align: right; margin-top: 3px; letter-spacing: .02em; }
 .inv-footer-note { margin-top: 14px; font-size: 10px; color: var(--muted-2); text-align: center; }
 .inv-footer-note p { margin: 0; white-space: pre-wrap; }
 .inv-thanks { text-align: center; margin-top: 30px; font-size: 10px; color: var(--muted-2); letter-spacing: .02em; }
