@@ -551,6 +551,8 @@ textarea { resize: vertical; min-height: 64px; }
   display: flex; justify-content: space-between; align-items: center; font-weight: 700; margin: 10px 0;
 }
 .balance-box.clear { background: var(--ok-bg); color: var(--ok); }
+.balance-box.paid-box { background: var(--ok-bg); color: var(--ok); margin-bottom: 0; }
+.balance-box.paid-box + .balance-box { margin-top: 8px; }
 
 /* ---------- Picker rows (form fields styled as buttons) ---------- */
 .picker-row {
