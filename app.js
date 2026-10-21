@@ -543,7 +543,7 @@ function invoiceRow(i) {
       <div class="name">${esc(i.client_name)}</div>
       <div class="sub">${esc(i.number)} &middot; ${fmtDate(i.issue_date)} &middot; ${statusBadge(i.status)}</div>
     </div>
-    <div class="amt">${money(i.total)}${Number(i.balance_due) > 0 ? `<div class="small" style="color:var(--danger)">${money(i.balance_due)} due</div>` : ''}</div>
+    <div class="amt">${money(i.total)}${Number(i.paid) > 0 ? `<div class="small" style="color:var(--ok)">${money(i.paid)} paid</div>` : ''}${Number(i.balance_due) > 0 ? `<div class="small" style="color:var(--danger)">${money(i.balance_due)} due</div>` : ''}</div>
   </a>`;
 }
 
@@ -654,6 +654,10 @@ async function viewInvoiceDetail(id) {
         <div>${statusBadge(inv.status)}${inv.is_imported ? ' <span class="badge lock">Imported</span>' : ''}</div>
       </div>
       <div class="inv-hero"><div class="amt">${money(inv.total)}</div></div>
+      <div class="balance-box paid-box">
+        <span>Paid so far</span>
+        <span>${money(inv.paid)}</span>
+      </div>
       <div class="balance-box ${Number(inv.balance_due) <= 0 ? 'clear' : ''}">
         <span>${Number(inv.balance_due) <= 0 ? 'Fully paid' : 'Balance due'}</span>
         <span>${money(inv.balance_due)}</span>
@@ -874,7 +878,7 @@ function pdfSafe(s) {
   return String(s == null ? '' : s)
     .replace(/[‘’]/g, "'").replace(/[“”]/g, '"')
     .replace(/[–—]/g, '-').replace(/…/g, '...')
-    .replace(/[^\x09\x0A\x0D\x20-\x7E -ÿ]/g, '');
+    .replace(/[^\x09\x0A\x0D\x20-\x7E -ÿ]/g, '');
 }
 
 async function buildDebtReminderPdf(inv, lines, pays) {
