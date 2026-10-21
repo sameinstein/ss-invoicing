@@ -640,7 +640,7 @@ async function viewInvoiceDetail(id) {
       <div class="spacer">
         <div style="font-size:12px;font-weight:700;color:var(--muted);text-transform:uppercase;letter-spacing:.04em">Invoice details</div>
       </div>
-      ${!inv.is_locked && !inv.is_void ? `<a class="btn sm" href="#/invoices/${inv.id}/edit">Edit</a>` : ''}
+      ${!inv.is_void ? `<a class="btn sm" href="#/invoices/${inv.id}/edit">Edit</a>` : ''}
       <button class="btn sm" id="printBtn">PDF</button>
       <button class="btn sm danger" id="deleteInvBtn" title="Delete invoice"><i class="fa-solid fa-trash"></i></button>
     </div>
@@ -651,7 +651,7 @@ async function viewInvoiceDetail(id) {
           <div style="font-weight:700;font-size:16px">${esc(inv.client_name)}</div>
           <div class="small muted">${esc(inv.number)} &middot; ${fmtDate(inv.issue_date)}</div>
         </div>
-        <div>${statusBadge(inv.status)}${inv.is_locked ? ' <span class="badge lock">Imported</span>' : ''}</div>
+        <div>${statusBadge(inv.status)}${inv.is_imported ? ' <span class="badge lock">Imported</span>' : ''}</div>
       </div>
       <div class="inv-hero"><div class="amt">${money(inv.total)}</div></div>
       <div class="balance-box ${Number(inv.balance_due) <= 0 ? 'clear' : ''}">
@@ -666,7 +666,7 @@ async function viewInvoiceDetail(id) {
         <div class="item-thumb" ${l.photo_path ? `data-thumb-path="${esc(l.photo_path)}"` : ''}>${l.photo_path ? '' : '<i class="fa-solid fa-image"></i>'}</div>
         <span class="spacer">${esc(l.description)} ${Number(l.quantity) !== 1 ? `&times; ${l.quantity}` : ''}</span><span style="font-weight:600">${money(l.amount)}</span>
       </div>`).join('')}
-    </div>` : (inv.is_locked ? `<div class="card small muted">Imported from Invoice Simple as a summary — the original itemised list wasn't part of the export.</div>` : '')}
+    </div>` : (inv.is_imported ? `<div class="card small muted">Imported from Invoice Simple as a summary — the original itemised list wasn't part of the export. Tap <b>Edit</b> to add items to this invoice.</div>` : '')}
 
     <div class="card">
       <div class="row between small" style="padding:3px 0"><span class="muted">Subtotal</span><span>${money(inv.subtotal)}</span></div>
@@ -874,7 +874,7 @@ function pdfSafe(s) {
   return String(s == null ? '' : s)
     .replace(/[‘’]/g, "'").replace(/[“”]/g, '"')
     .replace(/[–—]/g, '-').replace(/…/g, '...')
-    .replace(/[^\x09\x0A\x0D\x20-\x7E -ÿ]/g, '');
+    .replace(/[^\x09\x0A\x0D\x20-\x7E -ÿ]/g, '');
 }
 
 async function buildDebtReminderPdf(inv, lines, pays) {
@@ -1152,7 +1152,6 @@ async function viewInvoiceForm(id) {
     if (e1) throw e1; if (e2) throw e2;
     inv = invRows && invRows[0];
     if (!inv) { view.innerHTML = '<div class="empty">Invoice not found</div>'; return; }
-    if (inv.is_locked) { navigate('#/invoices/' + id); return; }
     existingLines = lines;
   }
 
@@ -1166,6 +1165,7 @@ async function viewInvoiceForm(id) {
     dueDate: inv?.due_date || addDays(todayISO(), p.default_due_days || 30),
     discount: Number(inv?.discount || 0),
     vatApplied: !!inv?.vat_applied,
+    vatRate: Number((inv?.vat_applied ? inv.vat_rate : null) ?? p.vat_rate ?? 18),
     notes: inv?.notes || '',
     poNumber: inv?.po_number || '',
     lines: existingLines.length
@@ -1173,13 +1173,18 @@ async function viewInvoiceForm(id) {
           key: uid(), item_id: l.item_id, description: l.description, quantity: Number(l.quantity), unit_price: Number(l.unit_price),
           photo_path: l.photo_path || null, photoFile: null, photoPreviewUrl: null, removePhoto: false,
         }))
-      : [{ key: uid(), item_id: null, description: '', quantity: 1, unit_price: 0, photo_path: null, photoFile: null, photoPreviewUrl: null, removePhoto: false }],
+      : (isEdit && Number(inv.subtotal) > 0)
+        // Imported summary invoice (no item list): keep its original amount as the first line,
+        // so adding items increases the total instead of replacing it.
+        ? [{ key: uid(), item_id: null, description: 'Original invoice (imported from Invoice Simple)', quantity: 1, unit_price: Number(inv.subtotal), photo_path: null, photoFile: null, photoPreviewUrl: null, removePhoto: false },
+           { key: uid(), item_id: null, description: '', quantity: 1, unit_price: 0, photo_path: null, photoFile: null, photoPreviewUrl: null, removePhoto: false }]
+        : [{ key: uid(), item_id: null, description: '', quantity: 1, unit_price: 0, photo_path: null, photoFile: null, photoPreviewUrl: null, removePhoto: false }],
   };
 
   function totals() {
     const subtotal = form.lines.reduce((s, l) => s + Number(l.quantity || 0) * Number(l.unit_price || 0), 0);
     const afterDiscount = Math.max(subtotal - Number(form.discount || 0), 0);
-    const vatRate = Number(p.vat_rate || 18);
+    const vatRate = Number(form.vatRate || p.vat_rate || 18);
     const vatAmount = form.vatApplied ? Math.round(afterDiscount * vatRate) / 100 : 0;
     const total = afterDiscount + vatAmount;
     return { subtotal, vatRate, vatAmount, total };
@@ -1288,7 +1293,7 @@ async function viewInvoiceForm(id) {
       <div class="field"><label>Discount (amount)</label><input id="discount" type="number" min="0" step="1" value="${form.discount}" /></div>
       <div class="check-row" style="margin-bottom:10px">
         <input type="checkbox" id="vatApplied" ${form.vatApplied ? 'checked' : ''} />
-        <label style="margin:0" for="vatApplied">Apply VAT (${p.vat_rate || 18}%)</label>
+        <label style="margin:0" for="vatApplied">Apply VAT (${form.vatRate || p.vat_rate || 18}%)</label>
       </div>
       <div id="totalsBox"></div>
     </div>
@@ -1424,6 +1429,12 @@ async function viewInvoiceForm(id) {
         vat_applied: form.vatApplied, vat_rate: t.vatRate, vat_amount: t.vatAmount, total: t.total,
         notes: $('#notes').value.trim() || null, po_number: $('#poNumber').value.trim() || null,
       };
+
+      // Invoice Simple had marked a few old invoices "settled" although payments were lower than the
+      // total. If the total is changed here, the real balance must show, so drop that flag.
+      if (isEdit && inv.settled_in_source && Math.round(t.total) !== Math.round(Number(inv.total))) {
+        payload.settled_in_source = false;
+      }
 
       let invoiceId = id;
       if (isEdit) {
