@@ -695,10 +695,10 @@ async function viewInvoiceDetail(id) {
     </div>
   `;
 
-  $('#printBtn').addEventListener('click', () => printInvoice(inv, lines));
+  $('#printBtn').addEventListener('click', () => saveInvoicePdf(inv, lines, pays));
   $('#shareBtn').addEventListener('click', () => shareInvoice(inv, lines, pays));
   // Build the reminder PDF in the background so sharing is instant when tapped.
-  setTimeout(() => { prepareReminder(inv, lines, pays).catch(() => {}); }, 300);
+  setTimeout(() => { prepareReminder(inv, lines, pays).catch(() => {}); prepareInvoicePdf(inv, lines, pays).catch(() => {}); }, 300);
   [$('#addPayBtn'), $('#recordPayBtn')].forEach((btn) => {
     if (btn) btn.addEventListener('click', () => openPaymentModal(inv, () => viewInvoiceDetail(id)));
   });
@@ -1071,6 +1071,220 @@ async function buildDebtReminderPdf(inv, lines, pays) {
   doc.text(fl, W / 2, y, { align: 'center' });
 
   return doc.output('blob');
+}
+
+// ---------------------------------------------------------------------
+// Invoice PDF — a real PDF file (not the browser print dialog), shared via
+// the phone's share sheet. Works in installed home-screen apps on iPhone
+// and in the Android app, where window.print() does not.
+// ---------------------------------------------------------------------
+function fetchAsDataUrl(url) {
+  return fetch(url).then(r => r.blob()).then(b => new Promise((res) => {
+    const fr = new FileReader();
+    fr.onload = () => res(fr.result);
+    fr.onerror = () => res(null);
+    fr.readAsDataURL(b);
+  })).catch(() => null);
+}
+
+// photoData: { storagePath: dataUrl } for any per-line photos
+async function buildInvoicePdf(inv, lines, pays, photoData) {
+  const jsPDF = window.jspdf && window.jspdf.jsPDF;
+  if (!jsPDF) throw new Error('PDF library did not load. Check your internet connection and reload.');
+  const p = state.profile || {};
+  photoData = photoData || {};
+  const doc = new jsPDF({ unit: 'mm', format: 'a4', compress: true });
+  const W = 210, H = 297, M = 14, R = W - M;
+  const RED = [200, 30, 45], INK = [30, 30, 36], MUTED = [110, 110, 120], LINE = [225, 225, 230];
+  let y = M;
+  const setC = (c) => doc.setTextColor(c[0], c[1], c[2]);
+  const t = (s, x, yy, o) => doc.text(pdfSafe(s), x, yy, o);
+  const ensure = (need) => { if (y + need > H - 16) { doc.addPage(); y = M; } };
+  const hr = (yy, c) => { const k = c || LINE; doc.setDrawColor(k[0], k[1], k[2]); doc.setLineWidth(0.2); doc.line(M, yy, R, yy); };
+  const imgFmt = (d) => (/^data:image\/png/i.test(d) ? 'PNG' : 'JPEG');
+
+  // ---- Header
+  let textX = M;
+  if (p.logo_data && /^data:image\/(png|jpe?g)/i.test(p.logo_data)) {
+    const sz = await loadImageSize(p.logo_data);
+    if (sz) {
+      const h = 16, w = Math.min(40, h * sz.w / sz.h);
+      try { doc.addImage(p.logo_data, imgFmt(p.logo_data), M, y, w, h); textX = M + w + 4; } catch (e) { /* skip logo */ }
+    }
+  }
+  setC(INK); doc.setFont('helvetica', 'bold'); doc.setFontSize(16); t(p.name || '', textX, y + 7);
+  if (p.tagline) { doc.setFont('helvetica', 'italic'); doc.setFontSize(9); setC(MUTED); t(p.tagline, textX, y + 12); }
+  doc.setFont('helvetica', 'bold'); doc.setFontSize(9); setC(RED); t('INVOICE', R, y + 3, { align: 'right' });
+  doc.setFontSize(17); setC(INK); t(inv.number, R, y + 10, { align: 'right' });
+  doc.setFont('helvetica', 'normal'); doc.setFontSize(8.5); setC(MUTED);
+  t('Issued ' + fmtDate(inv.issue_date), R, y + 15, { align: 'right' });
+  if (inv.due_date) t('Due ' + fmtDate(inv.due_date), R, y + 19, { align: 'right' });
+  y += 23;
+  doc.setDrawColor(RED[0], RED[1], RED[2]); doc.setLineWidth(0.9); doc.line(M, y, R, y);
+  y += 7;
+
+  // ---- From / Bill to
+  const colW = (R - M) / 2 - 3;
+  const party = (x, label, name, detail) => {
+    doc.setFillColor(248, 248, 250); doc.setDrawColor(LINE[0], LINE[1], LINE[2]); doc.setLineWidth(0.2);
+    const ls = doc.splitTextToSize(pdfSafe(detail || ''), colW - 8);
+    const bh = 14 + ls.length * 4;
+    doc.roundedRect(x, y, colW, bh, 1.5, 1.5, 'FD');
+    doc.setFont('helvetica', 'bold'); doc.setFontSize(7.5); setC(MUTED); t(label.toUpperCase(), x + 4, y + 5);
+    doc.setFontSize(10.5); setC(INK); t(name || '', x + 4, y + 10.5);
+    doc.setFont('helvetica', 'normal'); doc.setFontSize(8.5); setC(MUTED); doc.text(ls, x + 4, y + 15);
+    return bh + 1.5 + (ls.length ? 0 : 0);
+  };
+  const h1 = party(M, 'From', p.name, [p.address, p.phone, p.email].filter(Boolean).join('\n'));
+  const h2 = party(M + colW + 6, 'Bill to', inv.client_name, [inv.client_phone, inv.client_email].filter(Boolean).join('\n'));
+  y += Math.max(h1, h2) + 5;
+
+  // ---- Items table
+  const cDesc = M + 2, cQty = R - 62, cPrice = R - 33, cAmt = R - 2;
+  const tableHead = () => {
+    ensure(16);
+    doc.setFillColor(RED[0], RED[1], RED[2]); doc.rect(M, y, R - M, 7.5, 'F');
+    doc.setFont('helvetica', 'bold'); doc.setFontSize(8); doc.setTextColor(255, 255, 255);
+    t('DESCRIPTION', cDesc, y + 5); t('QTY', cQty, y + 5, { align: 'right' });
+    t('PRICE', cPrice, y + 5, { align: 'right' }); t('AMOUNT', cAmt, y + 5, { align: 'right' });
+    y += 7.5;
+  };
+  tableHead();
+  if (!lines.length) {
+    doc.setFont('helvetica', 'italic'); doc.setFontSize(9); setC(MUTED);
+    t('Summary invoice - itemised list not available', cDesc, y + 6); y += 10;
+  }
+  lines.forEach((l, i) => {
+    const photo = l.photo_path && photoData[l.photo_path];
+    const tx = cDesc + (photo ? 12 : 0);
+    const dl = doc.splitTextToSize(pdfSafe(l.description), cQty - 24 - tx);
+    const rowH = Math.max(photo ? 11 : 8, dl.length * 4.2 + 4);
+    if (y + rowH > H - 16) { doc.addPage(); y = M; tableHead(); }
+    if (i % 2) { doc.setFillColor(248, 248, 250); doc.rect(M, y, R - M, rowH, 'F'); }
+    if (photo) { try { doc.addImage(photo, imgFmt(photo), cDesc, y + 1, 9, 9, undefined, 'FAST'); } catch (e) { /* skip photo */ } }
+    doc.setFont('helvetica', 'normal'); doc.setFontSize(9.75); setC(INK);
+    doc.text(dl, tx, y + 5.2);
+    t(String(l.quantity), cQty, y + 5.2, { align: 'right' });
+    t(money(l.unit_price), cPrice, y + 5.2, { align: 'right' });
+    doc.setFont('helvetica', 'bold'); t(money(l.amount), cAmt, y + 5.2, { align: 'right' });
+    y += rowH;
+  });
+  hr(y); y += 6;
+
+  // ---- Totals
+  const balance = Number(inv.balance_due);
+  const rows = [['Subtotal', money(inv.subtotal)]];
+  if (Number(inv.discount) > 0) rows.push(['Discount', '-' + money(inv.discount)]);
+  if (inv.vat_applied) rows.push([`VAT (${inv.vat_rate}%)`, money(inv.vat_amount)]);
+  rows.push(['Total', money(inv.total), true]);
+  rows.push(['Paid', money(inv.paid)]);
+  ensure(rows.length * 6 + 16);
+  const tx0 = R - 70;
+  rows.forEach(([a, b, bold]) => {
+    doc.setFont('helvetica', bold ? 'bold' : 'normal'); doc.setFontSize(bold ? 11 : 9.75); setC(bold ? INK : MUTED);
+    t(a, tx0, y + 4); t(b, R, y + 4, { align: 'right' }); y += bold ? 7 : 6;
+  });
+  const clear = balance <= 0;
+  const col = clear ? [20, 130, 70] : RED;
+  doc.setFillColor(clear ? 225 : 253, clear ? 245 : 242, clear ? 238 : 243);
+  doc.setDrawColor(col[0], col[1], col[2]); doc.setLineWidth(0.4);
+  doc.roundedRect(tx0 - 3, y + 1, R - tx0 + 3, 10, 1.5, 1.5, 'FD');
+  doc.setFont('helvetica', 'bold'); doc.setFontSize(11); setC(col);
+  t(clear ? 'Fully paid' : 'Balance due', tx0, y + 7.6); t(money(balance), R - 2, y + 7.6, { align: 'right' });
+  y += 17;
+
+  // ---- Notes
+  if (inv.notes) {
+    const nl = doc.splitTextToSize(pdfSafe(inv.notes), R - M);
+    ensure(nl.length * 4.6 + 10);
+    doc.setFont('helvetica', 'bold'); doc.setFontSize(9.75); setC(INK); t('Notes', M, y); y += 4.6;
+    doc.setFont('helvetica', 'normal'); doc.text(nl, M, y); y += nl.length * 4.6 + 4;
+  }
+  // ---- Payment instructions (small print, as requested: 10.5px ≈ 7.9pt)
+  if (p.payment_instructions) {
+    const il = doc.splitTextToSize(pdfSafe(p.payment_instructions), R - M);
+    ensure(il.length * 3.6 + 10);
+    doc.setFont('helvetica', 'bold'); doc.setFontSize(9); setC(INK); t('Payment instructions', M, y); y += 4.2;
+    doc.setFont('helvetica', 'normal'); doc.setFontSize(7.9); setC(MUTED);
+    doc.text(il, M, y); y += il.length * 3.6 + 4;
+  }
+  // ---- Authorised signature
+  {
+    const sw = 32, sh = sw / SIGNATURE_RATIO;
+    ensure(sh + 8);
+    try { doc.addImage(SIGNATURE_PNG, 'PNG', R - sw, y, sw, sh, 'ssSignature', 'FAST'); } catch (e) { /* skip */ }
+    y += sh + 1;
+    doc.setDrawColor(150, 150, 160); doc.setLineWidth(0.25); doc.line(R - 52, y, R, y);
+    doc.setFont('helvetica', 'normal'); doc.setFontSize(8); setC(MUTED);
+    t('Authorised signature', R, y + 4, { align: 'right' });
+    y += 8;
+  }
+  // ---- Footer note (10px ≈ 7.5pt) at the bottom of the last page
+  const fl = doc.splitTextToSize(pdfSafe(p.invoice_footer || 'Thank you for your business.'), R - M);
+  if (y > H - 22) { doc.addPage(); y = M; }
+  y = Math.max(y, H - 14 - fl.length * 3.6);
+  hr(y); y += 5;
+  doc.setFont('helvetica', 'normal'); doc.setFontSize(7.5); setC(MUTED);
+  doc.text(fl, W / 2, y, { align: 'center' });
+
+  return doc.output('blob');
+}
+
+// Built in the background when an invoice opens, so tapping PDF shares instantly
+// (phones refuse to open the share sheet if the tap and the share are too far apart).
+let invoicePdfCache = { key: null, promise: null };
+function prepareInvoicePdf(inv, lines, pays) {
+  const key = [inv.id, inv.total, inv.paid, inv.balance_due, inv.updated_at, (lines || []).length, (pays || []).length].join('|');
+  if (invoicePdfCache.key === key && invoicePdfCache.promise) return invoicePdfCache.promise;
+  const promise = (async () => {
+    const paths = (lines || []).map(l => l.photo_path).filter(Boolean);
+    const photoData = {};
+    if (paths.length) {
+      const urls = await signedItemPhotoUrls(paths);
+      await Promise.all(Object.entries(urls).map(async ([path, url]) => {
+        const d = await fetchAsDataUrl(url);
+        if (d) photoData[path] = d;
+      }));
+    }
+    return buildInvoicePdf(inv, lines || [], pays || [], photoData);
+  })();
+  invoicePdfCache = { key, promise };
+  promise.catch(() => { if (invoicePdfCache.promise === promise) invoicePdfCache = { key: null, promise: null }; });
+  return promise;
+}
+
+async function saveInvoicePdf(inv, lines, pays) {
+  const btn = $('#printBtn');
+  const label = btn ? btn.innerHTML : '';
+  if (btn) { btn.disabled = true; btn.innerHTML = '...'; }
+  try {
+    const blob = await prepareInvoicePdf(inv, lines, pays);
+    const fname = ('Invoice-' + inv.number).replace(/[^\w.-]+/g, '-') + '.pdf';
+    const file = new File([blob], fname, { type: 'application/pdf' });
+
+    // 1) Phones / installed apps: share sheet with the PDF (Save to Files, WhatsApp, Print, ...)
+    if (navigator.share && navigator.canShare && navigator.canShare({ files: [file] })) {
+      try {
+        await navigator.share({ files: [file], title: 'Invoice ' + inv.number });
+        return;
+      } catch (e) {
+        if (e && e.name === 'AbortError') return;   // closed the share sheet
+        // real failure: fall through to the next option
+      }
+    }
+    // 2) Desktop browsers: download the PDF
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url; a.download = fname; document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(url), 10000);
+    toast('Invoice PDF downloaded');
+  } catch (err) {
+    // 3) Last resort: the old print route, so the button never does nothing
+    toast('PDF failed (' + (err && (err.message || err.name) || 'error') + ') - opening print view', true);
+    try { await printInvoice(inv, lines); } catch (e) { /* ignore */ }
+  } finally {
+    if (btn) { btn.disabled = false; btn.innerHTML = label; }
+  }
 }
 
 // The PDF is built in the background as soon as an invoice opens, so by the
