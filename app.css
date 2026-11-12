@@ -617,3 +617,7 @@ textarea { resize: vertical; min-height: 64px; }
   .inv-sheet { width: 186mm; max-width: 186mm; margin: 0; }
   .sidebar, header.topbar, nav.tabbar { display: none !important; }
 }
+
+/* Payment rows on the invoice page: tap to edit or delete */
+.pay-row { padding: 8px 4px; border-bottom: 1px solid var(--line); cursor: pointer; border-radius: 6px; -webkit-tap-highlight-color: transparent; }
+.pay-row:hover, .pay-row:active { background: #f6f6f8; }
