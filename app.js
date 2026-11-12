@@ -684,9 +684,9 @@ async function viewInvoiceDetail(id) {
 
     <div class="card">
       <div class="row between"><h2 style="margin:0">Payments</h2>${!inv.is_void ? '<button class="btn ghost sm" id="addPayBtn">+ Record</button>' : ''}</div>
-      ${pays.length ? pays.map(pmt => `<div class="row between small" style="padding:6px 0;border-bottom:1px solid var(--line)">
-        <span>${fmtDate(pmt.paid_on)} &middot; ${methodLabel(pmt.method)}${pmt.reference ? ' &middot; ' + esc(pmt.reference) : ''}</span><span style="font-weight:600">${money(pmt.amount)}</span>
-      </div>`).join('') : '<div class="empty small">No payments recorded</div>'}
+      ${pays.length ? pays.map(pmt => `<div class="row between small pay-row" data-pay-id="${pmt.id}" role="button" title="Edit or delete this payment">
+        <span>${fmtDate(pmt.paid_on)} &middot; ${methodLabel(pmt.method)}${pmt.reference ? ' &middot; ' + esc(pmt.reference) : ''}</span><span class="row" style="gap:8px;align-items:center"><span style="font-weight:600">${money(pmt.amount)}</span><i class="fa-solid fa-pen muted" style="font-size:11px"></i></span>
+      </div>`).join('') + '<div class="small muted" style="margin-top:6px">Tap a payment to edit or delete it.</div>' : '<div class="empty small">No payments recorded</div>'}
     </div>
 
     <div class="row" style="gap:10px;margin-top:4px">
@@ -702,6 +702,10 @@ async function viewInvoiceDetail(id) {
   [$('#addPayBtn'), $('#recordPayBtn')].forEach((btn) => {
     if (btn) btn.addEventListener('click', () => openPaymentModal(inv, () => viewInvoiceDetail(id)));
   });
+  $$('[data-pay-id]').forEach((row) => row.addEventListener('click', () => {
+    const pmt = pays.find(x => x.id === row.dataset.payId);
+    if (pmt) openPaymentModal(inv, () => viewInvoiceDetail(id), pmt);
+  }));
   const deleteInvBtn = $('#deleteInvBtn');
   if (deleteInvBtn) deleteInvBtn.addEventListener('click', () => {
     confirmDelete(
@@ -738,34 +742,63 @@ function methodLabel(m) {
 // ---------------------------------------------------------------------
 // Record a payment (modal)
 // ---------------------------------------------------------------------
-function openPaymentModal(inv, onDone) {
+function openPaymentModal(inv, onDone, pmt) {
+  const isEdit = !!pmt;
   const balance = Number(inv.balance_due || (inv.total - (inv.paid || 0)));
+  const amt = isEdit ? Math.round(Number(pmt.amount)) : (balance > 0 ? balance : '');
+  const method = isEdit ? pmt.method : 'cash';
+  const opt = (v, l) => `<option value="${v}" ${method === v ? 'selected' : ''}>${l}</option>`;
   openModal(`
-    <h3>Record payment — ${esc(inv.number)}</h3>
+    <h3>${isEdit ? 'Edit payment' : 'Record payment'} — ${esc(inv.number)}</h3>
     <form id="payForm" class="stack">
-      <div class="field"><label>Amount</label><input name="amount" type="number" min="1" step="1" value="${balance > 0 ? balance : ''}" required /></div>
-      <div class="field"><label>Date</label><input name="paid_on" type="date" value="${todayISO()}" required /></div>
+      <div class="field"><label>Amount</label><input name="amount" type="number" min="1" step="1" value="${amt}" required /></div>
+      <div class="field"><label>Date</label><input name="paid_on" type="date" value="${isEdit ? pmt.paid_on : todayISO()}" required /></div>
       <div class="field"><label>Method</label>
         <select name="method">
-          <option value="cash">Cash</option><option value="bank">Bank</option><option value="mobile_money">Mobile money</option>
-          <option value="card">Card</option><option value="cheque">Cheque</option><option value="other">Other</option>
+          ${opt('cash', 'Cash')}${opt('bank', 'Bank')}${opt('mobile_money', 'Mobile money')}
+          ${opt('card', 'Card')}${opt('cheque', 'Cheque')}${opt('other', 'Other')}
         </select>
       </div>
-      <div class="field"><label>Reference (optional)</label><input name="reference" /></div>
-      <button class="btn primary block" type="submit">Save payment</button>
+      <div class="field"><label>Reference (optional)</label><input name="reference" value="${isEdit ? esc(pmt.reference || '') : ''}" /></div>
+      <button class="btn primary block" type="submit" id="paySaveBtn">${isEdit ? 'Save changes' : 'Save payment'}</button>
+      ${isEdit ? '<button class="btn danger block" type="button" id="payDeleteBtn"><i class="fa-solid fa-trash"></i> Delete this payment</button>' : ''}
     </form>
   `);
+  let saving = false;   // stops double/triple taps from saving the same payment again
   $('#payForm').addEventListener('submit', async (e) => {
     e.preventDefault();
+    if (saving) return;
+    saving = true;
+    const btn = $('#paySaveBtn'); btn.disabled = true; btn.innerHTML = '<span class="spin"></span>';
     const f = new FormData(e.target);
+    const row = {
+      amount: Number(f.get('amount')), paid_on: f.get('paid_on'),
+      method: f.get('method'), reference: (f.get('reference') || '').trim() || null,
+    };
     try {
-      const { error } = await sb.from('payments').insert({
-        invoice_id: inv.id, amount: Number(f.get('amount')), paid_on: f.get('paid_on'),
-        method: f.get('method'), reference: f.get('reference') || null,
-      });
+      const { error } = isEdit
+        ? await sb.from('payments').update(row).eq('id', pmt.id)
+        : await sb.from('payments').insert({ invoice_id: inv.id, ...row });
       if (error) throw error;
-      closeModal(); toast('Payment recorded'); onDone && onDone();
-    } catch (err) { toast(friendlyError(err), true); }
+      closeModal(); toast(isEdit ? 'Payment updated' : 'Payment recorded'); onDone && onDone();
+    } catch (err) {
+      toast(friendlyError(err), true);
+      saving = false; btn.disabled = false; btn.textContent = isEdit ? 'Save changes' : 'Save payment';
+    }
+  });
+  const delBtn = $('#payDeleteBtn');
+  if (delBtn) delBtn.addEventListener('click', () => {
+    confirmDelete(
+      'Delete payment?',
+      `${money(pmt.amount)} paid on ${fmtDate(pmt.paid_on)} (${methodLabel(pmt.method)}) on ${inv.number}.` +
+        '\n\nThe invoice balance will go up by this amount. This cannot be undone.',
+      'Delete payment',
+      async () => {
+        const { error } = await sb.from('payments').delete().eq('id', pmt.id);
+        if (error) throw error;
+        closeModal(); toast('Payment deleted'); onDone && onDone();
+      }
+    );
   });
 }
 
@@ -1878,8 +1911,12 @@ function openClientModal(client, onDone) {
       <button class="btn primary block" type="submit">Save</button>
     </form>
   `);
+  let clientSaving = false;
   $('#clientForm').addEventListener('submit', async (e) => {
     e.preventDefault();
+    if (clientSaving) return;
+    clientSaving = true;
+    setTimeout(() => { clientSaving = false; }, 2500);
     const f = new FormData(e.target);
     const payload = {
       name: f.get('name').trim(), phone: f.get('phone').trim() || null,
